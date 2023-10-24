@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import { DataGrid } from '@mui/x-data-grid';
-import { v4 as uuidv4 } from 'uuid';
+import FileUpload from '../FileUpload';
 
 function Dashboard() {
     const router = useRouter();
@@ -13,7 +13,10 @@ function Dashboard() {
     const [approve, setApprove] = useState('');
     const [updateId, setUpdateId] = useState('');
     const [rows, setRows] = useState([]);
-    const [loading, setLoading] = useState(true); // Add loading state
+    const [loading, setLoading] = useState(true);
+    const [file, setFile] = useState();
+
+    console.log("file" , file)
 
     useEffect(() => {
         fetchData();
@@ -24,20 +27,14 @@ function Dashboard() {
             .then((response) => {
                 if (response.data.success && Array.isArray(response.data.clients)) {
                     const data = response.data.clients;
-                    const mappedRows = data.map((item) => {
-                        const start = new Date(item.startDate);
-                        const end = new Date(start);
-                        end.setDate(start.getDate() + parseInt(item.numberOfDays) - 1);
-
-                        return {
-                            id: item._id,
-                            reason: item.reason,
-                            startDate: item.startDate,
-                            endDate: item.endDate,
-                            numberOfDays: item.numberOfDays,
-                            approve: item.approve,
-                        };
-                    });
+                    const mappedRows = data.map((item) => ({
+                        id: item._id,
+                        reason: item.reason,
+                        startDate: item.startDate,
+                        endDate: item.endDate,
+                        numberOfDays: item.numberOfDays,
+                        approve: item.approve,
+                    }));
                     setRows(mappedRows);
                 } else {
                     console.error('Unexpected API response structure:', response.data);
@@ -47,7 +44,7 @@ function Dashboard() {
                 console.error('Error fetching data:', error);
             })
             .finally(() => {
-                setLoading(false); 
+                setLoading(false);
             });
     };
 
@@ -55,16 +52,35 @@ function Dashboard() {
         router.push('/login');
     };
 
-    const handleLeaveRequest = () => {
-        const newRow = {
-            startDate,
-            endDate,
-            numberOfDays,
-            reason,
-            approve,
-        };
+    const handleFileChange = (e) => {
+        const selectedFile = e.target.files[0];
+        setFile(selectedFile);
+    };
 
-        axios.post('http://localhost:5000/clients', newRow)
+    const handleLeaveRequest = () => {
+        if (!startDate || !endDate || !numberOfDays || !reason || !approve) {
+            console.error('Please fill in all required fields.');
+            return;
+        }
+
+
+
+        const formData = new FormData();
+        formData.append('file', file); 
+        formData.append('startDate', startDate);
+        formData.append('endDate', endDate);
+        formData.append('numberOfDays', numberOfDays);
+        formData.append('reason', reason);
+        formData.append('approve', approve);
+
+
+
+        axios
+            .post('http://localhost:5000/clients', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            })
             .then((response) => {
                 if (response.data.success) {
                     console.log('Leave request submitted:', response.data);
@@ -85,10 +101,9 @@ function Dashboard() {
             })
             .catch((error) => {
                 console.error('Error submitting leave request:', error);
+                console.error('Server response:', error.response);
             });
     };
-
-
     const handleUpdate = () => {
         if (!updateId) {
             console.error('Please enter an ID for the update.');
@@ -109,7 +124,6 @@ function Dashboard() {
                 if (response.data.success) {
                     console.log('Leave request updated:', response.data.message);
 
-                    // Update the state to reflect the change
                     const updatedRows = rows.map((row) => {
                         if (row.id === updateId) {
                             return updatedRow;
@@ -118,7 +132,6 @@ function Dashboard() {
                     });
                     setRows(updatedRows);
 
-                    // Clear the input fields
                     setReason('');
                     setStartDate('');
                     setEndDate('');
@@ -140,7 +153,6 @@ function Dashboard() {
                 if (response.data.success) {
                     console.log('Leave request deleted:', response.data.message);
 
-                    // Update the state to remove the deleted row
                     const updatedRows = rows.filter((row) => row.id !== id);
                     setRows(updatedRows);
                 } else {
@@ -149,8 +161,17 @@ function Dashboard() {
             })
             .catch((error) => {
                 console.error('Error deleting leave request:', error);
+                console.log(test,'data')
             });
     };
+
+    const CombinedSubmitButton = () => (
+        <FileUpload
+            handleFileChange={handleFileChange}
+            handleLeaveRequest={handleLeaveRequest}
+        />
+    );
+
     const columns = [
         { field: 'id', headerName: 'ID', width: 70 },
         { field: 'reason', headerName: 'Reason', width: 200 },
@@ -158,6 +179,7 @@ function Dashboard() {
         { field: 'endDate', headerName: 'End Date', width: 130 },
         { field: 'numberOfDays', headerName: 'Number of Days', width: 130 },
         { field: 'approve', headerName: 'Approve', width: 130 },
+        { field: 'FileUpload', headerName: 'uploadFile', width: 100 },
         {
             field: 'update',
             headerName: 'Update',
@@ -175,7 +197,6 @@ function Dashboard() {
             ),
         },
     ];
-
     return (
         <div>
             <h2>Dashboard</h2>
@@ -221,8 +242,13 @@ function Dashboard() {
                         onChange={(e) => setApprove(e.target.value)}
                     />
                 </div>
-
-                <button onClick={handleLeaveRequest}>Soumettre la demande de congé</button>
+                <CombinedSubmitButton />
+                <FileUpload/>
+                <div>
+                    <input type="file" onChange={handleFileChange} />
+                    <button onClick={handleLeaveRequest}>Soumettre la demande de congé</button>
+                </div>
+                
             </div>
             <div>
                 <label>Enter ID for Update:</label>
@@ -238,11 +264,11 @@ function Dashboard() {
                 <p>Loading...</p>
             ) : (
                 <div style={{ height: 400, width: '100%' }}>
-                    <DataGrid
-                        rows={rows}
-                        columns={columns}
-                        getRowId={(row) => row.startDate + row.endDate}
-                    />
+                        <DataGrid
+                            rows={rows}
+                            columns={columns}
+                            getRowId={(row) => row.id} 
+                        />
                 </div>
             )}
         </div>
@@ -250,3 +276,11 @@ function Dashboard() {
 }
 
 export default Dashboard;
+
+
+
+
+
+
+
+
